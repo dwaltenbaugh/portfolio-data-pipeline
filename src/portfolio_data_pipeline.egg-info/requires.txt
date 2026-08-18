@@ -1,0 +1,13 @@
+boto3
+httpx
+pyarrow
+pydantic
+python-dotenv
+tenacity
+
+[dev]
+mypy
+pytest
+pytest-cov
+pytest-mock
+ruff
