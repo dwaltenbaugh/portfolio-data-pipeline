@@ -130,6 +130,26 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
+
+  pipeline-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${PIPELINE_DB_NAME}
+      POSTGRES_USER: ${PIPELINE_DB_USER}
+      POSTGRES_PASSWORD: ${PIPELINE_DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pipeline-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${PIPELINE_DB_USER} -d ${PIPELINE_DB_NAME}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
       
   airflow-apiserver:
     <<: *airflow-common
@@ -347,4 +367,6 @@ services:
 
 volumes:
   postgres-db-volume:
+  pipeline-db-data:
   minio-data:
+

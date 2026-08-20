@@ -1,11 +1,15 @@
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from dotenv import load_dotenv
 
+from pipeline.database import (
+    connect_pipeline_database,
+    load_pipeline_database_config,
+)
 from pipeline.dq.openfoodfacts import (
     validate_openfoodfacts_table,
 )
@@ -19,6 +23,9 @@ from pipeline.schemas.openfoodfacts import (
 from pipeline.schemas.validation import (
     records_to_table,
 )
+from pipeline.state.extraction_window import (
+    build_extraction_window,
+)
 from pipeline.state.raw_run import (
     RawObjectRecord,
     build_manifest_key,
@@ -27,6 +34,9 @@ from pipeline.state.raw_run import (
     build_success_key,
     build_success_payload,
     create_raw_run_context,
+)
+from pipeline.state.watermarks import (
+    WatermarkRepository,
 )
 from pipeline.storage.parquet import write_parquet
 from pipeline.storage.s3 import (
@@ -38,6 +48,7 @@ from pipeline.storage.s3 import (
     upload_file,
 )
 
+
 def main() -> None:
     load_dotenv()
 
@@ -45,6 +56,167 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
+
+    # ----------------------------------------------------------
+    # PIPELINE DATABASE CONFIGURATION
+    # ----------------------------------------------------------
+    #
+    # Load the PostgreSQL connection settings that were placed in
+    # .env. This database stores operational pipeline state such as
+    # source watermarks.
+    database_config = (
+        load_pipeline_database_config()
+    )
+
+    # ----------------------------------------------------------
+    # OPEN FOOD FACTS INCREMENTAL CONFIGURATION
+    # ----------------------------------------------------------
+
+    # Parse the configured starting timestamp for this source.
+    #
+    # datetime.fromisoformat() turns a string such as:
+    #
+    #   2026-08-01T00:00:00+00:00
+    #
+    # into a Python datetime object.
+    #
+    # The +00:00 portion is important because it makes the datetime
+    # timezone-aware.
+    initial_watermark = datetime.fromisoformat(
+        os.environ[
+            "OPENFOODFACTS_INITIAL_WATERMARK"
+        ]
+    )
+
+
+    # Environment variables are strings, so convert the configured
+    # number of lookback hours into an integer and then into a
+    # timedelta that our window builder understands.
+    lookback = timedelta(
+        hours=int(
+            os.environ.get(
+                "OPENFOODFACTS_LOOKBACK_HOURS",
+                "0",
+            )
+        )
+    )
+
+
+    # ----------------------------------------------------------
+    # DETERMINE THIS RUN'S UPPER TIME BOUNDARY
+    # ----------------------------------------------------------
+
+    # Capture "now" once so every calculation in this block uses
+    # the same point in time.
+    now_utc = datetime.now(UTC)
+
+
+    # This is a DAILY batch pipeline, so we only process through
+    # the most recently completed UTC day boundary.
+    #
+    # For example, if the script runs at:
+    #
+    #   2026-08-20 14:30 UTC
+    #
+    # batch_end becomes:
+    #
+    #   2026-08-20 00:00 UTC
+    #
+    # We do NOT use 14:30 because that would create a partial-day
+    # batch whose boundary changes depending on execution time.
+    batch_end = now_utc.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    # ----------------------------------------------------------
+    # READ CURRENT PIPELINE STATE
+    # ----------------------------------------------------------
+
+    # Open a real PostgreSQL connection.
+    #
+    # We only READ state in this milestone. No watermark will be
+    # advanced yet.
+    with connect_pipeline_database(
+        database_config
+    ) as connection:
+
+        # The repository hides the SQL details from the runner.
+        watermark_repository = WatermarkRepository(
+            connection=connection
+        )
+
+        # Ask PostgreSQL:
+        #
+        # "What timestamp has Open Food Facts been successfully
+        # processed through?"
+        #
+        # Because we have not inserted a real OpenFoodFacts
+        # watermark yet, the first execution should return None.
+        current_watermark = (
+            watermark_repository.get_watermark(
+                "openfoodfacts"
+            )
+        )
+
+    # ----------------------------------------------------------
+    # CALCULATE THIS RUN'S EXTRACTION WINDOW
+    # ----------------------------------------------------------
+    #
+    # This combines:
+    #
+    #   stored PostgreSQL state
+    #       +
+    #   source configuration
+    #       +
+    #   today's stable batch boundary
+    #       +
+    #   late-arriving-data lookback
+    #
+    # into one immutable ExtractionWindow object.
+    extraction_window = build_extraction_window(
+        source_name="openfoodfacts",
+        current_watermark=current_watermark,
+        initial_watermark=initial_watermark,
+        batch_end=batch_end,
+        lookback=lookback,
+    )
+
+    # ----------------------------------------------------------
+    # TEMPORARY OBSERVABILITY
+    # ----------------------------------------------------------
+    #
+    # Print the calculated window before doing any extraction.
+    #
+    # For now this is intentionally verbose so we can visually
+    # inspect the state calculation while developing the pipeline.
+    print()
+    print("Open Food Facts extraction window")
+    print("---------------------------------")
+    print(
+        "Previous watermark: "
+        f"{extraction_window.previous_watermark}"
+    )
+    print(
+        "Incremental start:  "
+        f"{extraction_window.incremental_start}"
+    )
+    print(
+        "Extract start:      "
+        f"{extraction_window.extract_start}"
+    )
+    print(
+        "Extract end:        "
+        f"{extraction_window.extract_end}"
+    )
+    print(
+        "Next watermark:     "
+        f"{extraction_window.next_watermark}"
+    )
+    print()
+
 
     user_agent = os.environ["OPENFOODFACTS_USER_AGENT"]
 
