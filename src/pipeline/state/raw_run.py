@@ -121,18 +121,54 @@ def build_success_payload(
     manifest_key: str,
     objects: list[RawObjectRecord],
     committed_at: datetime,
+    extract_start: datetime,
+    extract_end: datetime,
+    next_watermark: datetime,
 ) -> dict[str, Any]:
+    """
+    Build the durable _SUCCESS.json payload for a committed raw run.
+
+    The payload records both:
+      - which attempt successfully committed
+      - which extraction window that committed data represents
+
+    The next_watermark value is especially important for recovery:
+    if PostgreSQL fails to update after _SUCCESS.json is written,
+    a retry can read this object and safely finish the watermark update.
+    """
+
     return {
-        "schema_version": 1,
+        # Schema version 2 adds extraction-window metadata.
+        "schema_version": 2,
+
+        # Identify the logical raw run.
         "source": context.source,
         "logical_date": context.logical_date.isoformat(),
         "run_id": context.run_id,
+
+        # Identify the physical attempt that won the commit.
         "attempt_id": context.attempt_id,
+
+        # Point to the manifest containing the complete inventory
+        # of Parquet parts for this committed attempt.
         "manifest_key": manifest_key,
+
+        # Operational metrics.
         "object_count": len(objects),
         "row_count": sum(
             obj.row_count
             for obj in objects
         ),
+
+        # Record the actual extraction interval represented by
+        # this committed raw run.
+        "extract_start": extract_start.isoformat(),
+        "extract_end": extract_end.isoformat(),
+
+        # This is the database high-water mark that may safely
+        # be persisted after this raw commit succeeds.
+        "next_watermark": next_watermark.isoformat(),
+
+        # Timestamp representing when we attempted the logical commit.
         "committed_at": committed_at.isoformat(),
     }

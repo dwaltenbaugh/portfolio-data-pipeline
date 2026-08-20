@@ -154,3 +154,45 @@ class WatermarkRepository:
                 "Watermark was not advanced because the new "
                 "timestamp was not later than the existing watermark."
             )
+
+
+def reconcile_watermark(
+    repository: WatermarkRepository,
+    source_name: str,
+    committed_watermark: datetime,
+    run_id: str,
+) -> bool:
+    """
+    Reconcile PostgreSQL watermark state with a committed raw run.
+
+    Returns True if PostgreSQL had to be advanced.
+    Returns False if PostgreSQL already matched or was ahead.
+    """
+
+    # Read the current high-water mark from PostgreSQL.
+    current_watermark = repository.get_watermark(
+        source_name
+    )
+
+    # If this source has no watermark yet, initialize it
+    # from the successfully committed raw run.
+    if current_watermark is None:
+        repository.advance_watermark(
+            source_name=source_name,
+            new_watermark=committed_watermark,
+            run_id=run_id,
+        )
+        return True
+
+    # If PostgreSQL is behind raw storage, catch it up.
+    if current_watermark < committed_watermark:
+        repository.advance_watermark(
+            source_name=source_name,
+            new_watermark=committed_watermark,
+            run_id=run_id,
+        )
+        return True
+
+    # If PostgreSQL already matches or is ahead, do nothing.
+    # Never move a high-water mark backward.
+    return False

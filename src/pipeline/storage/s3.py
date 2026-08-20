@@ -1,8 +1,8 @@
+import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
-import json
 
 import boto3
 from botocore.config import Config
@@ -243,6 +243,52 @@ def put_json_object(
         f"s3://{config.bucket}/"
         f"{object_key}"
     )
+
+def get_json_object(
+    client: Any,
+    config: S3StorageConfig,
+    object_key: str,
+) -> dict[str, Any]:
+    """
+    Download a JSON object from S3-compatible storage and return
+    its contents as a Python dictionary.
+
+    We'll primarily use this to read _SUCCESS.json when reconciling
+    raw-storage state with PostgreSQL watermark state.
+    """
+
+    try:
+        # get_object returns metadata plus a streaming response body.
+        response = client.get_object(
+            Bucket=config.bucket,
+            Key=object_key,
+        )
+
+        # Body is a StreamingBody rather than a normal string.
+        # read() retrieves its bytes.
+        body_bytes = response["Body"].read()
+
+        # Decode UTF-8 bytes into text.
+        body_text = body_bytes.decode("utf-8")
+
+        # Convert the JSON text back into Python objects.
+        payload = json.loads(body_text)
+
+    except (BotoCoreError, ClientError) as exc:
+        raise S3UploadError(
+            "Failed to read "
+            f"s3://{config.bucket}/{object_key}"
+        ) from exc
+
+    # We expect our control objects to contain JSON dictionaries,
+    # not arrays, strings, numbers, etc.
+    if not isinstance(payload, dict):
+        raise S3UploadError(
+            "Expected JSON object at "
+            f"s3://{config.bucket}/{object_key}"
+        )
+
+    return payload
 
 def upload_file(
         client: Any,

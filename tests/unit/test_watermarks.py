@@ -6,6 +6,7 @@ import pytest
 from pipeline.state.watermarks import (
     WatermarkAdvanceError,
     WatermarkRepository,
+    reconcile_watermark,
 )
 
 
@@ -93,7 +94,7 @@ def test_advance_watermark_succeeds_when_row_changes() -> None:
     cursor.execute.assert_called_once()
 
 
-    def test_advance_watermark_fails_when_row_does_not_change() -> None:
+def test_advance_watermark_fails_when_row_does_not_change() -> None:
         repository, cursor = create_mock_repository()
 
         # PostgreSQL's WHERE condition prevented the upsert because the
@@ -114,3 +115,138 @@ def test_advance_watermark_succeeds_when_row_changes() -> None:
                 ),
                 run_id="abc123",
             )
+
+
+def test_reconcile_initializes_missing_watermark() -> None:
+    """
+    If raw storage has committed successfully but PostgreSQL has no
+    state yet, reconciliation should create the watermark.
+    """
+
+    repository = MagicMock()
+
+    committed_watermark = datetime(
+        2026,
+        8,
+        20,
+        tzinfo=UTC,
+    )
+
+    # Simulate a brand-new source.
+    repository.get_watermark.return_value = None
+
+    changed = reconcile_watermark(
+        repository=repository,
+        source_name="openfoodfacts",
+        committed_watermark=committed_watermark,
+        run_id="run-001",
+    )
+
+    assert changed is True
+
+    repository.advance_watermark.assert_called_once_with(
+        source_name="openfoodfacts",
+        new_watermark=committed_watermark,
+        run_id="run-001",
+    )
+
+def test_reconcile_advances_behind_watermark() -> None:
+    """
+    If PostgreSQL is behind the committed raw watermark, advance it.
+    """
+
+    repository = MagicMock()
+
+    repository.get_watermark.return_value = datetime(
+        2026,
+        8,
+        19,
+        tzinfo=UTC,
+    )
+
+    committed_watermark = datetime(
+        2026,
+        8,
+        20,
+        tzinfo=UTC,
+    )
+
+    changed = reconcile_watermark(
+        repository=repository,
+        source_name="openfoodfacts",
+        committed_watermark=committed_watermark,
+        run_id="run-002",
+    )
+
+    assert changed is True
+
+    repository.advance_watermark.assert_called_once_with(
+        source_name="openfoodfacts",
+        new_watermark=committed_watermark,
+        run_id="run-002",
+    )
+
+def test_reconcile_does_nothing_when_watermark_matches() -> None:
+    """
+    Reconciliation should be idempotent.
+
+    If PostgreSQL already contains the committed watermark, there
+    is nothing left to do.
+    """
+
+    repository = MagicMock()
+
+    committed_watermark = datetime(
+        2026,
+        8,
+        20,
+        tzinfo=UTC,
+    )
+
+    repository.get_watermark.return_value = (
+        committed_watermark
+    )
+
+    changed = reconcile_watermark(
+        repository=repository,
+        source_name="openfoodfacts",
+        committed_watermark=committed_watermark,
+        run_id="run-002",
+    )
+
+    assert changed is False
+
+    repository.advance_watermark.assert_not_called()
+
+def test_reconcile_never_moves_watermark_backward() -> None:
+    """
+    If PostgreSQL is already ahead of an older committed raw run,
+    reconciliation must not move state backward.
+    """
+
+    repository = MagicMock()
+
+    repository.get_watermark.return_value = datetime(
+        2026,
+        8,
+        21,
+        tzinfo=UTC,
+    )
+
+    older_committed_watermark = datetime(
+        2026,
+        8,
+        20,
+        tzinfo=UTC,
+    )
+
+    changed = reconcile_watermark(
+        repository=repository,
+        source_name="openfoodfacts",
+        committed_watermark=older_committed_watermark,
+        run_id="old-run",
+    )
+
+    assert changed is False
+
+    repository.advance_watermark.assert_not_called()
