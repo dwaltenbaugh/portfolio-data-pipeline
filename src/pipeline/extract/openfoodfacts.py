@@ -502,11 +502,6 @@ def iter_product_pages(
                 )
                 break
 
-            if page_number < max_pages:
-                time.sleep(
-                    config.seconds_between_requests
-                )
-
             # --------------------------------------------------
             # OPTIONAL SAFETY CAP
             # --------------------------------------------------
