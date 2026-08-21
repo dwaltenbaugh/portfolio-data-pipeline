@@ -81,6 +81,22 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    # ----------------------------------------------------------
+    # PIPELINE SERVICE ADDRESSES INSIDE DOCKER
+    # ----------------------------------------------------------
+    #
+    # The .env file uses localhost addresses so the pipeline can
+    # also be executed directly from the host machine.
+    #
+    # Inside an Airflow container, however, localhost means that
+    # Airflow container itself.
+    #
+    # Docker Compose service names act as DNS hostnames on the
+    # internal Compose network, so Airflow reaches the raw object
+    # store and pipeline database through these names instead.
+    S3_ENDPOINT_URL: http://minio:9000
+    PIPELINE_DB_HOST: pipeline-db
+    PIPELINE_DB_PORT: "5432"
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
