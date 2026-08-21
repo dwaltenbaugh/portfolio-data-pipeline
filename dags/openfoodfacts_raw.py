@@ -19,6 +19,9 @@ from pendulum import datetime
 from pipeline.jobs.openfoodfacts_raw import (
     run_openfoodfacts_raw,
 )
+from pipeline.jobs.openfoodfacts_staging import (
+    run_openfoodfacts_staging,
+)
 
 
 @dag(
@@ -122,23 +125,41 @@ def openfoodfacts_raw():
             batch_end=batch_end,
         )
 
-    @task
-    def raw_complete() -> None:
+    @task(
+    retries=3,
+    retry_delay=timedelta(minutes=5),
+)
+    def load_staging() -> None:
         """
-        Represent the downstream boundary after raw ingestion.
+        Load the committed raw batch into PostgreSQL staging.
+        """
 
-        This task will later be replaced or extended with staging
-        and mart processing.
-        """
+        context = get_current_context()
+
+        airflow_interval_end = context["data_interval_end"]
+
+        # Use the same normalized logical batch date as raw ingestion.
+        batch_end = airflow_interval_end.in_timezone("UTC").replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        batch_date = batch_end.date()
 
         print(
-            "Open Food Facts raw ingestion committed successfully. "
-            "Downstream processing may begin."
+            "Loading Open Food Facts staging batch: "
+            f"{batch_date}"
+        )
+
+        run_openfoodfacts_staging(
+            batch_date=batch_date,
         )
 
     ingest_task = ingest_raw()
-    complete_task = raw_complete()
+    staging_task = load_staging()
 
-    ingest_task >> complete_task
+    ingest_task >> staging_task
 
 openfoodfacts_raw()

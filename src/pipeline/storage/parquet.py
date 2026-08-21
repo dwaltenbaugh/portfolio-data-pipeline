@@ -22,3 +22,14 @@ def write_parquet(
     )
 
     return output_path
+
+def read_parquet_bytes(
+    data: bytes,
+) -> pa.Table:
+    """
+    Read Parquet bytes into a PyArrow table.
+    """
+
+    buffer = pa.BufferReader(data)
+
+    return pq.read_table(buffer)

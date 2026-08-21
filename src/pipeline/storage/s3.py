@@ -316,3 +316,31 @@ def upload_file(
         ) from exc
 
     return f"s3://{config.bucket}/{object_key}"
+
+
+def get_object_bytes(
+    client: Any,
+    config: S3StorageConfig,
+    object_key: str,
+) -> bytes:
+    """
+    Download one object from S3-compatible storage and return
+    its raw bytes.
+
+    This is useful for binary formats such as Parquet.
+    """
+
+    try:
+        response = client.get_object(
+            Bucket=config.bucket,
+            Key=object_key,
+        )
+
+        return response["Body"].read()
+
+    except (BotoCoreError, ClientError) as exc:
+        raise S3UploadError(
+            "Failed to read "
+            f"s3://{config.bucket}/{object_key}"
+        ) from exc
+    
