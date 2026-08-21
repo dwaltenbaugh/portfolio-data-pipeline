@@ -249,6 +249,23 @@ def extract_and_land_parts(
     landed in MinIO/S3.
     """
 
+    # OPENFOODFACTS_MAX_PAGES is an optional operational guard.
+    #
+    # Leaving it unset means pagination is driven entirely by the
+    # extraction window.
+    #
+    # Setting it can be useful during local development or when we
+    # deliberately want to limit calls to a third-party API.
+    max_pages_value = os.getenv(
+        "OPENFOODFACTS_MAX_PAGES"
+    )
+
+    max_pages = (
+        int(max_pages_value)
+        if max_pages_value
+        else None
+    )
+
     landed_objects: list[RawObjectRecord] = []
 
     # Local disk is only temporary working storage.
@@ -272,7 +289,7 @@ def extract_and_land_parts(
             extract_start=extraction_window.extract_start,
             extract_end=extraction_window.extract_end,
 
-            max_pages=2,
+            max_pages=10,
         ):
             # Enforce the expected raw schema.
             table = records_to_table(

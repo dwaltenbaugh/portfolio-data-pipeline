@@ -104,6 +104,73 @@ def _product_is_in_window(
     )
 
 
+def _page_timestamp_bounds(
+    products: list[dict[str, Any]],
+) -> tuple[datetime | None, datetime | None]:
+    """
+    Return the newest and oldest valid modification timestamps
+    found on one Open Food Facts page.
+
+    The result is:
+
+        (newest_timestamp, oldest_timestamp)
+
+    None is returned for both values if the page contains no usable
+    last_modified_t values.
+
+    This helper will eventually let our pagination loop reason about
+    whether additional pages could still contain records belonging
+    to the current extraction window.
+    """
+
+    timestamps: list[datetime] = []
+
+    for product in products:
+        last_modified_t = product.get(
+            "last_modified_t"
+        )
+
+        # Some source records may not have a usable modification
+        # timestamp.
+        #
+        # Ignore those records for the purpose of determining the
+        # page's chronological boundaries.
+        if not isinstance(
+            last_modified_t,
+            (int, float),
+        ):
+            continue
+
+        modified_at = datetime.fromtimestamp(
+            last_modified_t,
+            tz=UTC,
+        )
+
+        timestamps.append(
+            modified_at
+        )
+
+    # If there were no usable timestamps, we cannot determine this
+    # page's chronological position.
+    if not timestamps:
+        return None, None
+
+    # max() gives us the most recent timestamp.
+    newest_timestamp = max(
+        timestamps
+    )
+
+    # min() gives us the oldest timestamp.
+    oldest_timestamp = min(
+        timestamps
+    )
+
+    return (
+        newest_timestamp,
+        oldest_timestamp,
+    )
+
+
 def _check_response(
     response: httpx.Response,
 ) -> None:
@@ -131,20 +198,47 @@ def _check_response(
 
 
 @retry(
+    # Retry only failures we have explicitly classified as
+    # transient. Programming errors, bad JSON, schema failures,
+    # 400 responses, etc. should still fail immediately.
     retry=retry_if_exception_type(
         (
             httpx.TransportError,
             RetryableHTTPError,
         )
     ),
+
+    # Wait progressively longer between failed attempts.
+    #
+    # This is especially important for Open Food Facts because
+    # HTTP 503 may represent infrastructure-wide throttling rather
+    # than a brief network hiccup.
+    #
+    # Roughly:
+    #     attempt 1 -> ~5 sec
+    #     attempt 2 -> ~10 sec
+    #     attempt 3 -> ~20 sec
+    #     attempt 4 -> ~40 sec
+    #     attempt 5+ -> capped near 120 sec
+    #
+    # Jitter keeps multiple clients from retrying at exactly the
+    # same moment.
     wait=wait_exponential_jitter(
-        initial=2,
-        max=30,
-        jitter=2,
+        initial=5,
+        max=120,
+        jitter=5,
     ),
-    stop=stop_after_attempt(5),
+
+    # Give a degraded public API more time to recover before
+    # abandoning the extraction.
+    stop=stop_after_attempt(8),
+
+    # If every attempt fails, propagate the final exception so the
+    # pipeline run fails rather than silently continuing.
     reraise=True,
 )
+
+
 def fetch_page(
     client: httpx.Client,
     page: int,
@@ -205,7 +299,7 @@ def iter_product_pages(
     config: OpenFoodFactsConfig,
     extract_start: datetime,
     extract_end: datetime,
-    max_pages: int = 2,
+    max_pages: int | None = None,
 ) -> Iterator[
     tuple[int, list[dict[str, Any]]]
 ]:
@@ -239,6 +333,16 @@ def iter_product_pages(
             )
         )
 
+    # If a caller supplies a safety cap, it must allow at least
+    # one source page to be requested.
+    if (
+        max_pages is not None
+        and max_pages < 1
+    ):
+        raise ValueError(
+            "max_pages must be at least 1 when provided."
+        )
+
     logger.info(
         (
             "Open Food Facts extraction window: "
@@ -268,10 +372,9 @@ def iter_product_pages(
         # storage because some records will be outside the window.
         total_seen = 0
 
-        for page_number in range(
-            1,
-            max_pages + 1,
-        ):
+        page_number = 1
+
+        while True:
 
             payload = fetch_page(
                 client=client,
@@ -302,6 +405,51 @@ def iter_product_pages(
                 break
 
             total_seen += len(products)
+
+            # Determine the chronological range represented by
+            # this source page.
+            #
+            # This does NOT change filtering behavior yet.
+            # For now, it is diagnostic information that will help
+            # us verify how Open Food Facts orders paginated results
+            # when sort_by=last_modified_t.
+            (
+            page_newest_timestamp,
+            page_oldest_timestamp,
+            ) = _page_timestamp_bounds(
+                products
+            )
+
+            logger.info(
+                (
+                    "Page %s timestamp range: "
+                    "newest=%s, oldest=%s"
+                ),
+                page_number,
+                page_newest_timestamp,
+                page_oldest_timestamp,
+            )
+
+            # If even the newest record on this page is older than the
+            # extraction window, then the entire page is too old.
+            #
+            # Because Open Food Facts is returning pages in descending
+            # last_modified_t order, subsequent pages will be older still.
+            if (
+                page_newest_timestamp is not None
+                and page_newest_timestamp < extract_start
+            ):
+                logger.info(
+                    (
+                        "Page %s is entirely older than "
+                        "extract_start=%s. "
+                        "Pagination complete."
+                    ),
+                    page_number,
+                    extract_start,
+                )
+
+                break
 
             # Apply the pipeline's actual incremental extraction
             # contract to every record returned by the API.
@@ -358,3 +506,35 @@ def iter_product_pages(
                 time.sleep(
                     config.seconds_between_requests
                 )
+
+            # --------------------------------------------------
+            # OPTIONAL SAFETY CAP
+            # --------------------------------------------------
+
+            # max_pages is no longer how we decide that the extraction
+            # window is complete.
+            #
+            # It is only an optional development / operational guard that
+            # prevents an unexpectedly large number of requests.
+            if (
+                max_pages is not None
+                and page_number >= max_pages
+            ):
+                logger.warning(
+                    (
+                        "Reached max_pages=%s before the source "
+                        "pagination naturally completed."
+                    ),
+                    max_pages,
+                )
+
+                break
+
+            # Respect the configured delay before requesting another page.
+            time.sleep(
+                config.seconds_between_requests
+            )
+
+            # Advance to the next API page only after all stopping conditions
+            # for the current page have been evaluated.
+            page_number += 1    
