@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "portfolio-data-pipeline"
 version = "0.1.0"
 description = "Portfolio-grade end-to-end data engineering pipeline"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
 
 dependencies = [
     "boto3",
