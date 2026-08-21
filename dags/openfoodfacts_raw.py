@@ -78,7 +78,37 @@ def openfoodfacts_raw():
         # Passing it into the job makes execution reproducible:
         # retries and re-runs use the same logical boundary rather
         # than whatever datetime.now() happens to return.
-        batch_end = context["data_interval_end"]
+        airflow_interval_end = context["data_interval_end"]
+
+        # ----------------------------------------------------------
+        # NORMALIZE TO OUR DAILY PIPELINE BOUNDARY
+        # ----------------------------------------------------------
+        #
+        # Scheduled runs already end at midnight UTC because the DAG
+        # runs on a daily midnight schedule.
+        #
+        # Manual DAG runs can receive a timetable-inferred interval
+        # that does not necessarily end exactly at midnight.
+        #
+        # Our raw-layer run identity and watermark model are daily, so
+        # normalize every Airflow invocation to the most recent completed
+        # UTC midnight.
+        batch_end = airflow_interval_end.in_timezone("UTC").replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        print(
+            "Airflow data interval end: "
+            f"{airflow_interval_end}"
+        )
+
+        print(
+            "Pipeline batch end: "
+            f"{batch_end}"
+        )
 
         run_openfoodfacts_raw(
             batch_end=batch_end,
