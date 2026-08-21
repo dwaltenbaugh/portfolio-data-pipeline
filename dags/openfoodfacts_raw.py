@@ -33,11 +33,19 @@ from pipeline.jobs.openfoodfacts_raw import (
         8,
         1,
         tz="UTC",
+        
     ),
 
     # We do not want Airflow automatically generating historical
     # runs all the way back to start_date during development.
     catchup=False,
+
+    # This source uses one forward-moving persistent watermark.
+    #
+    # Only one logical Open Food Facts run may execute at a time so
+    # each run calculates its extraction window from the watermark
+    # committed by the previous run.
+    max_active_runs=1,
 
     tags=[
         "portfolio",
