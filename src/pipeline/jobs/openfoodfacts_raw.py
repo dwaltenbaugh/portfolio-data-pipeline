@@ -514,7 +514,9 @@ def advance_committed_watermark(
         )
 
 
-def run_openfoodfacts_raw() -> None:
+def run_openfoodfacts_raw(
+    batch_end: datetime | None = None,
+) -> None:
     """
     Run one logical Open Food Facts raw extraction.
 
@@ -574,20 +576,30 @@ def run_openfoodfacts_raw() -> None:
     # 2. IDENTIFY THIS LOGICAL DAILY RUN
     # ----------------------------------------------------------
 
-    # Capture the clock once.
-    now_utc = datetime.now(UTC)
+    # ----------------------------------------------------------
+    # RESOLVE THE LOGICAL BATCH BOUNDARY
+    # ----------------------------------------------------------
 
-    # Daily batches use the most recent completed UTC boundary.
-    #
-    # Example:
-    #   current time = Aug 20 17:30
-    #   batch_end    = Aug 20 00:00
-    batch_end = now_utc.replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0,
-    )
+    if batch_end is None:
+        # CLI execution does not have an Airflow-provided logical
+        # boundary, so use the most recent completed UTC midnight.
+        now_utc = datetime.now(UTC)
+
+        batch_end = now_utc.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+    # Airflow supplies batch_end directly, so from this point onward
+    # we work only with batch_end rather than the wall clock.
+    if batch_end.tzinfo is None:
+        raise ValueError(
+            "batch_end must be timezone-aware."
+        )
+
+    batch_end = batch_end.astimezone(UTC)
 
     extract_date = batch_end.date()
 
