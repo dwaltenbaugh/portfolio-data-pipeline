@@ -289,7 +289,11 @@ def extract_and_land_parts(
             extract_start=extraction_window.extract_start,
             extract_end=extraction_window.extract_end,
 
-            max_pages=10,
+            # Optional safety guard only.
+            #
+            # None means "continue until the source itself tells us
+            # we've completely crossed the extraction window."
+            max_pages=max_pages,
         ):
             # Enforce the expected raw schema.
             table = records_to_table(
