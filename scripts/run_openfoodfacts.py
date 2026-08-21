@@ -228,13 +228,22 @@ def print_extraction_window(
 def extract_and_land_parts(
     *,
     extractor_config: OpenFoodFactsConfig,
+    extraction_window: ExtractionWindow,
     s3_client,
     s3_config: S3StorageConfig,
     run_context: RawRunContext,
 ) -> list[RawObjectRecord]:
     """
-    Extract API pages, validate them, serialize them to Parquet,
-    and upload each successfully validated part to raw storage.
+    Extract API pages that fall inside this run's extraction window,
+    validate them, serialize them to Parquet, and upload each
+    successfully validated part to raw storage.
+
+    The extraction window is passed all the way down to the source
+    extractor so that records outside:
+
+        extract_start <= last_modified_t < extract_end
+
+    are not included in the raw files produced by this run.
 
     Returns metadata describing only the objects that successfully
     landed in MinIO/S3.
@@ -254,6 +263,15 @@ def extract_and_land_parts(
         # entire source response in memory.
         for page_number, products in iter_product_pages(
             config=extractor_config,
+
+            # Only these two boundaries matter to the source extractor.
+            #
+            # We intentionally do NOT pass previous_watermark or
+            # next_watermark here. Those are pipeline-state concepts,
+            # not API-extraction concepts.
+            extract_start=extraction_window.extract_start,
+            extract_end=extraction_window.extract_end,
+
             max_pages=2,
         ):
             # Enforce the expected raw schema.
@@ -618,11 +636,16 @@ def main() -> None:
     # ----------------------------------------------------------
 
     landed_objects = extract_and_land_parts(
-        extractor_config=extractor_config,
-        s3_client=s3_client,
-        s3_config=s3_config,
-        run_context=run_context,
-    )
+    extractor_config=extractor_config,
+
+    # The source extractor now needs the calculated boundaries,
+    # not merely the infrastructure configuration.
+    extraction_window=extraction_window,
+
+    s3_client=s3_client,
+    s3_config=s3_config,
+    run_context=run_context,
+)
 
     # ----------------------------------------------------------
     # 7. WRITE THE ATTEMPT MANIFEST
