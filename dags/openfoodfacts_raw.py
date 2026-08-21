@@ -122,7 +122,23 @@ def openfoodfacts_raw():
             batch_end=batch_end,
         )
 
-    ingest_raw()
+    @task
+    def raw_complete() -> None:
+        """
+        Represent the downstream boundary after raw ingestion.
 
+        This task will later be replaced or extended with staging
+        and mart processing.
+        """
+
+        print(
+            "Open Food Facts raw ingestion committed successfully. "
+            "Downstream processing may begin."
+        )
+
+    ingest_task = ingest_raw()
+    complete_task = raw_complete()
+
+    ingest_task >> complete_task
 
 openfoodfacts_raw()
