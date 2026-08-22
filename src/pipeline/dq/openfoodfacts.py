@@ -94,3 +94,78 @@ def validate_openfoodfacts_staging_batch(
             "Staging contains "
             f"{null_code_count} rows with null product codes."
         )
+
+
+def validate_openfoodfacts_mart_batch(
+    connection: Connection,
+    batch_date: date,
+) -> None:
+    """
+    Run blocking mart-layer checks for one processed batch.
+
+    Checks:
+    - every staging product code exists in dim_product
+    - every non-null staging update event exists in fact_product_update
+    """
+
+    query = """
+        SELECT
+            /*
+             * Count staging rows whose business key cannot be found
+             * in the product dimension.
+             */
+            COUNT(*) FILTER (
+                WHERE dim.product_key IS NULL
+            ) AS missing_dimension_count,
+
+            /*
+             * Count staging update events that cannot be found
+             * in the fact table.
+             */
+            COUNT(*) FILTER (
+                WHERE staging.last_modified_t IS NOT NULL
+                  AND fact.product_update_key IS NULL
+            ) AS missing_fact_count
+
+        FROM staging.openfoodfacts_products AS staging
+
+        LEFT JOIN mart.dim_product AS dim
+            ON dim.code = staging.code
+
+        LEFT JOIN mart.fact_product_update AS fact
+            ON fact.product_key = dim.product_key
+           AND fact.source_last_modified_t =
+               staging.last_modified_t
+
+        WHERE staging.batch_date = %s
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            query,
+            (batch_date,),
+        )
+
+        result = cursor.fetchone()
+
+    if result is None:
+        raise DataQualityError(
+            "Unable to retrieve mart DQ metrics."
+        )
+
+    missing_dimension_count = result[0]
+    missing_fact_count = result[1]
+
+    if missing_dimension_count > 0:
+        raise DataQualityError(
+            "Mart dimension reconciliation failed: "
+            f"{missing_dimension_count} staging rows "
+            "have no matching dim_product row."
+        )
+
+    if missing_fact_count > 0:
+        raise DataQualityError(
+            "Mart fact reconciliation failed: "
+            f"{missing_fact_count} staging update events "
+            "have no matching fact_product_update row."
+        )

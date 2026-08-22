@@ -6,6 +6,9 @@ from pipeline.database import (
     connect_pipeline_database,
     load_pipeline_database_config,
 )
+from pipeline.dq.openfoodfacts import (
+    validate_openfoodfacts_mart_batch,
+)
 from pipeline.load.openfoodfacts_mart import (
     load_product_update_facts,
     merge_product_dimension,
@@ -61,6 +64,15 @@ def run_openfoodfacts_mart(
                 connection=connection,
                 batch_date=batch_date,
             )
+        )
+
+        # Run mart DQ before the transaction commits.
+        #
+        # If validation raises DataQualityError, leaving the
+        # connection context rolls back the entire mart load.
+        validate_openfoodfacts_mart_batch(
+            connection=connection,
+            batch_date=batch_date,
         )
 
     print(
