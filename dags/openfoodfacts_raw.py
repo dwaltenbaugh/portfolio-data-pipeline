@@ -19,6 +19,9 @@ from pendulum import datetime
 from pipeline.jobs.openfoodfacts_raw import (
     run_openfoodfacts_raw,
 )
+from pipeline.jobs.openfoodfacts_mart import (
+    run_openfoodfacts_mart,
+)
 from pipeline.jobs.openfoodfacts_staging import (
     run_openfoodfacts_staging,
 )
@@ -126,9 +129,9 @@ def openfoodfacts_raw():
         )
 
     @task(
-    retries=3,
-    retry_delay=timedelta(minutes=5),
-)
+        retries=3,
+        retry_delay=timedelta(minutes=5),
+    )
     def load_staging() -> None:
         """
         Load the committed raw batch into PostgreSQL staging.
@@ -156,10 +159,48 @@ def openfoodfacts_raw():
         run_openfoodfacts_staging(
             batch_date=batch_date,
         )
+    @task(
+        retries=3,
+        retry_delay=timedelta(minutes=5),
+    )
+    def load_mart() -> None:
+        """
+        Load one completed staging batch into the mart layer.
+
+        The mart job handles:
+        - Type 1 product-dimension merge
+        - product-update fact loading
+        - transactional commit / rollback
+        """
+
+        context = get_current_context()
+
+        airflow_interval_end = context["data_interval_end"]
+
+        # Use the same normalized logical batch date as both
+        # raw ingestion and staging.
+        batch_end = airflow_interval_end.in_timezone("UTC").replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        batch_date = batch_end.date()
+
+        print(
+            "Loading Open Food Facts mart batch: "
+            f"{batch_date}"
+        )
+
+        run_openfoodfacts_mart(
+            batch_date=batch_date,
+        )
 
     ingest_task = ingest_raw()
     staging_task = load_staging()
+    mart_task = load_mart()
 
-    ingest_task >> staging_task
+    ingest_task >> staging_task >> mart_task
 
 openfoodfacts_raw()
