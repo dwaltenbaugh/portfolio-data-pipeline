@@ -2,6 +2,7 @@ from datetime import date
 
 from pipeline.jobs import openfoodfacts_staging
 from pipeline.storage.s3 import S3StorageConfig
+import pytest
 
 
 def test_get_committed_raw_object_keys(
@@ -69,6 +70,7 @@ def test_get_committed_raw_object_keys(
         # _SUCCESS points staging to the winning attempt's manifest.
         if object_key == manifest_key:
             return {
+                "row_count": 6,
                 "objects": [
                     {
                         "object_key": (
@@ -86,7 +88,7 @@ def test_get_committed_raw_object_keys(
                         "row_count": 2,
                         "size_bytes": 500,
                     },
-                ]
+                ],
             }
 
         raise AssertionError(
@@ -102,20 +104,24 @@ def test_get_committed_raw_object_keys(
         fake_get_json_object,
     )
 
-    result = (
+    (
+    raw_object_keys,
+    expected_row_count,
+    ) = (
         openfoodfacts_staging
-        .get_committed_raw_object_keys(
+        .get_committed_raw_batch(
             s3_client=fake_s3_client,
             s3_config=s3_config,
             batch_date=batch_date,
         )
     )
 
-    # The helper should return only the Parquet object keys.
-    assert result == [
-        "openfoodfacts/part-00001.parquet",
-        "openfoodfacts/part-00002.parquet",
+    assert raw_object_keys == [
+    "openfoodfacts/part-00001.parquet",
+    "openfoodfacts/part-00002.parquet",
     ]
+
+    assert expected_row_count == 6
 
     # It should have performed exactly two metadata reads:
     #
@@ -128,3 +134,78 @@ def test_get_committed_raw_object_keys(
     )
 
     assert requested_keys[1] == manifest_key
+
+
+def test_get_committed_raw_batch_rejects_row_count_mismatch(
+    monkeypatch,
+) -> None:
+    """
+    Reject a manifest whose declared row count does not equal
+    the sum of its object-level row counts.
+    """
+
+    fake_s3_client = object()
+
+    s3_config = S3StorageConfig(
+        bucket="portfolio-data-raw",
+        endpoint_url="http://localhost:9000",
+    )
+
+    batch_date = date(
+        2026,
+        8,
+        21,
+    )
+
+    manifest_key = "test/manifest.json"
+
+    def fake_get_json_object(
+        client,
+        config,
+        object_key,
+    ):
+        if object_key.endswith(
+            "/_SUCCESS.json"
+        ):
+            return {
+                "manifest_key": manifest_key,
+            }
+
+        if object_key == manifest_key:
+            return {
+                # Deliberately incorrect:
+                # objects total 6, but manifest claims 7.
+                "row_count": 7,
+                "objects": [
+                    {
+                        "object_key": "part-1.parquet",
+                        "row_count": 4,
+                        "size_bytes": 1000,
+                    },
+                    {
+                        "object_key": "part-2.parquet",
+                        "row_count": 2,
+                        "size_bytes": 500,
+                    },
+                ],
+            }
+
+        raise AssertionError(
+            f"Unexpected object key: {object_key}"
+        )
+
+    monkeypatch.setattr(
+        openfoodfacts_staging,
+        "get_json_object",
+        fake_get_json_object,
+    )
+
+    with pytest.raises(
+        openfoodfacts_staging.DataQualityError,
+        match="Raw manifest row-count mismatch",
+    ):
+        openfoodfacts_staging.get_committed_raw_batch(
+            s3_client=fake_s3_client,
+            s3_config=s3_config,
+            batch_date=batch_date,
+        )

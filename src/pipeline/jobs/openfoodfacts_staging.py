@@ -29,16 +29,20 @@ from pipeline.storage.s3 import (
     get_json_object,
     get_object_bytes,
 )
+from pipeline.dq.openfoodfacts import (
+    DataQualityError,
+    validate_openfoodfacts_staging_batch,
+)
 
 SOURCE_NAME = "openfoodfacts"
 
 
-def get_committed_raw_object_keys(
+def get_committed_raw_batch(
     *,
     s3_client,
     s3_config: S3StorageConfig,
     batch_date: date,
-) -> list[str]:
+) -> tuple[list[str], int]:
     """
     Return the Parquet object keys belonging to the committed raw run
     for one logical batch date.
@@ -101,7 +105,33 @@ def get_committed_raw_object_keys(
         for obj in manifest_payload["objects"]
     ]
 
-    return raw_object_keys
+    raw_object_keys = [
+        obj["object_key"]
+        for obj in manifest_payload["objects"]
+    ]
+
+    object_row_count = sum(
+        obj["row_count"]
+        for obj in manifest_payload["objects"]
+    )
+
+    expected_row_count = manifest_payload[
+                "row_count"
+        ]
+    
+
+    if object_row_count != expected_row_count:
+        raise DataQualityError(
+            "Raw manifest row-count mismatch: "
+            f"manifest reports {expected_row_count}, "
+            f"but objects total {object_row_count}."
+        )
+
+    return (
+        raw_object_keys,
+        expected_row_count,
+    )
+
 
 def run_openfoodfacts_staging(
     *,
@@ -144,7 +174,10 @@ def run_openfoodfacts_staging(
     # manifest.json
     #       ↓
     # committed Parquet object keys
-    raw_object_keys = get_committed_raw_object_keys(
+    (
+    raw_object_keys,
+    expected_row_count,
+    ) = get_committed_raw_batch(
         s3_client=s3_client,
         s3_config=s3_config,
         batch_date=batch_date,
@@ -182,6 +215,17 @@ def run_openfoodfacts_staging(
             )
 
             total_rows += inserted_rows
+
+        # Validate the completed logical staging batch before the
+        # transaction commits.
+        #
+        # If this raises DataQualityError, the connection context
+        # manager rolls the entire staging load back.
+        validate_openfoodfacts_staging_batch(
+        connection=connection,
+        batch_date=batch_date,
+        expected_row_count=expected_row_count,
+    )
 
     print(
         f"Loaded {total_rows} Open Food Facts rows "
