@@ -48,6 +48,7 @@ from pipeline.storage.s3 import (
 
 SOURCE_NAME = "openfoodfacts"
 
+logger = logging.getLogger(__name__)
 
 def reconcile_success_marker(
     *,
@@ -110,14 +111,20 @@ def reconcile_success_marker(
         )
 
     if changed:
-        print(
-            "Raw run was already committed; "
-            "PostgreSQL watermark was reconciled."
+        logger.info(
+            "Raw commit recovered and watermark reconciled: "
+            "source=%s run_id=%s watermark=%s",
+            source_name,
+            committed_run_id,
+            committed_watermark,
         )
     else:
-        print(
-            "Raw run and PostgreSQL watermark "
-            "are already synchronized."
+        logger.info(
+            "Raw commit and watermark already synchronized: "
+            "source=%s run_id=%s watermark=%s",
+            source_name,
+            committed_run_id,
+            committed_watermark,
         )
 
 
@@ -189,41 +196,24 @@ def build_source_extraction_window(
     )
 
 
-def print_extraction_window(
+def log_extraction_window(
     extraction_window: ExtractionWindow,
 ) -> None:
-    """
-    Print the calculated boundaries while the pipeline is under
-    development.
+    """Log the extraction boundaries for this run."""
 
-    Later we can replace this with structured logging/metrics.
-    """
-
-    print()
-    print("Open Food Facts extraction window")
-    print("---------------------------------")
-    print(
-        "Previous watermark: "
-        f"{extraction_window.previous_watermark}"
+    logger.info(
+        "Open Food Facts extraction window: "
+        "previous_watermark=%s "
+        "incremental_start=%s "
+        "extract_start=%s "
+        "extract_end=%s "
+        "next_watermark=%s",
+        extraction_window.previous_watermark,
+        extraction_window.incremental_start,
+        extraction_window.extract_start,
+        extraction_window.extract_end,
+        extraction_window.next_watermark,
     )
-    print(
-        "Incremental start:  "
-        f"{extraction_window.incremental_start}"
-    )
-    print(
-        "Extract start:      "
-        f"{extraction_window.extract_start}"
-    )
-    print(
-        "Extract end:        "
-        f"{extraction_window.extract_end}"
-    )
-    print(
-        "Next watermark:     "
-        f"{extraction_window.next_watermark}"
-    )
-    print()
-
 
 def extract_and_land_parts(
     *,
@@ -342,10 +332,13 @@ def extract_and_land_parts(
                 )
             )
 
-            print(
-                f"Page {page_number}: "
-                f"{table.num_rows} rows -> "
-                f"{s3_uri}"
+            logger.info(
+                "Raw page landed: "
+                "source=%s page_number=%s row_count=%s s3_uri=%s",
+                SOURCE_NAME,
+                page_number,
+                table.num_rows,
+                s3_uri,
             )
 
     return landed_objects
@@ -385,8 +378,12 @@ def write_manifest(
         payload=manifest_payload,
     )
 
-    print(
-        f"Manifest written -> {manifest_uri}"
+    logger.info(
+        "Raw manifest written: "
+        "source=%s run_id=%s manifest_uri=%s",
+        SOURCE_NAME,
+        run_context.run_id,
+        manifest_uri,
     )
 
     # The success payload needs the key, not the URI.
@@ -444,8 +441,13 @@ def commit_raw_run(
             if_absent=True,
         )
 
-        print(
-            f"Run committed -> {success_uri}"
+        logger.info(
+            "Raw run committed: "
+            "source=%s run_id=%s logical_date=%s success_uri=%s",
+            SOURCE_NAME,
+            run_context.run_id,
+            run_context.logical_date,
+            success_uri,
         )
 
         return True
@@ -455,9 +457,12 @@ def commit_raw_run(
         #
         # Respect its _SUCCESS marker and ensure PostgreSQL reflects
         # the committed watermark.
-        print(
-            "Another attempt already committed "
-            "this logical run."
+        logger.warning(
+            "Raw run was already committed by another attempt: "
+            "source=%s run_id=%s attempt_id=%s",
+            SOURCE_NAME,
+            run_context.run_id,
+            run_context.attempt_id,
         )
 
         reconcile_success_marker(
@@ -504,13 +509,20 @@ def advance_committed_watermark(
         )
 
     if changed:
-        print(
-            "PostgreSQL watermark advanced -> "
-            f"{extraction_window.next_watermark}"
+        logger.info(
+            "Source watermark advanced: "
+            "source=%s next_watermark=%s run_id=%s",
+            SOURCE_NAME,
+            extraction_window.next_watermark,
+            run_context.run_id,
         )
     else:
-        print(
-            "PostgreSQL watermark was already current."
+        logger.info(
+            "Source watermark already current: "
+            "source=%s watermark=%s run_id=%s",
+            SOURCE_NAME,
+            extraction_window.next_watermark,
+            run_context.run_id,
         )
 
 
@@ -649,7 +661,7 @@ def run_openfoodfacts_raw(
         batch_end=batch_end,
     )
 
-    print_extraction_window(
+    log_extraction_window(
         extraction_window
     )
 

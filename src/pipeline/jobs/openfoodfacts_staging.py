@@ -2,6 +2,7 @@ import os
 from datetime import date
 
 from dotenv import load_dotenv
+import logging
 
 from pipeline.database import (
     connect_pipeline_database,
@@ -30,6 +31,7 @@ from pipeline.dq.openfoodfacts import (
 
 SOURCE_NAME = "openfoodfacts"
 
+logger = logging.getLogger(__name__)
 
 def get_committed_raw_batch(
     *,
@@ -216,9 +218,12 @@ def run_openfoodfacts_staging(
         expected_row_count=expected_row_count,
         )
 
-    print(
-        f"Loaded {total_rows} Open Food Facts rows "
-        f"into staging for batch {batch_date}."
+    logger.info(
+        "Open Food Facts staging load complete: "
+        "source=%s batch_date=%s rows_loaded=%s",
+        SOURCE_NAME,
+        batch_date,
+        total_rows,
     )
 
     return total_rows
