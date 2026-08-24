@@ -9,27 +9,17 @@ from pipeline.dq.openfoodfacts import (
 
 
 class FakeCursor:
-    """
-    Minimal fake psycopg cursor.
-
-    The mart DQ function only needs:
-    - execute()
-    - fetchone()
-    - context-manager behavior
-    """
-
     def __init__(self, result):
         self.result = result
-        self.executed_query = None
-        self.executed_params = None
+        self.executions = []
 
-    def execute(
-        self,
-        query,
-        params,
-    ) -> None:
-        self.executed_query = query
-        self.executed_params = params
+    def execute(self, query, params) -> None:
+        self.executions.append(
+            (
+                query,
+                params,
+            )
+        )
 
     def fetchone(self):
         return self.result
@@ -92,7 +82,7 @@ def test_validate_openfoodfacts_mart_batch_passes() -> None:
     assert (
         connection
         .cursor_instance
-        .executed_params
+        .executions[0][1]
     ) == (
         batch_date,
     )

@@ -23,12 +23,6 @@ from pipeline.storage.s3 import (
 from pipeline.storage.parquet import (
     read_parquet_bytes,
 )
-from pipeline.storage.s3 import (
-    S3StorageConfig,
-    create_s3_client,
-    get_json_object,
-    get_object_bytes,
-)
 from pipeline.dq.openfoodfacts import (
     DataQualityError,
     validate_openfoodfacts_staging_batch,
@@ -105,11 +99,6 @@ def get_committed_raw_batch(
         for obj in manifest_payload["objects"]
     ]
 
-    raw_object_keys = [
-        obj["object_key"]
-        for obj in manifest_payload["objects"]
-    ]
-
     object_row_count = sum(
         obj["row_count"]
         for obj in manifest_payload["objects"]
@@ -117,7 +106,7 @@ def get_committed_raw_batch(
 
     expected_row_count = manifest_payload[
                 "row_count"
-        ]
+    ]
     
 
     if object_row_count != expected_row_count:
@@ -225,7 +214,7 @@ def run_openfoodfacts_staging(
         connection=connection,
         batch_date=batch_date,
         expected_row_count=expected_row_count,
-    )
+        )
 
     print(
         f"Loaded {total_rows} Open Food Facts rows "

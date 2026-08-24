@@ -3,6 +3,7 @@ import pyarrow.compute as pc
 from datetime import date
 from psycopg import Connection
 
+from pipeline.dq.metrics import record_dq_metric
 from pipeline.storage.s3 import (
     S3StorageConfig,
     create_s3_client,
@@ -82,6 +83,30 @@ def validate_openfoodfacts_staging_batch(
     row_count = result[0]
     null_code_count = result[1]
 
+     # Persist the observed staging row count.
+    record_dq_metric(
+        connection=connection,
+        source_name="openfoodfacts",
+        pipeline_layer="staging",
+        batch_date=batch_date,
+        metric_name="row_count",
+        metric_value=row_count,
+        passed=(row_count == expected_row_count),
+        expected_value=expected_row_count,
+    )
+
+    # Persist the null-code check.
+    record_dq_metric(
+        connection=connection,
+        source_name="openfoodfacts",
+        pipeline_layer="staging",
+        batch_date=batch_date,
+        metric_name="null_code_count",
+        metric_value=null_code_count,
+        passed=(null_code_count == 0),
+        expected_value=0,
+    )
+
     if row_count != expected_row_count:
         raise DataQualityError(
             "Staging row-count mismatch: "
@@ -155,6 +180,28 @@ def validate_openfoodfacts_mart_batch(
 
     missing_dimension_count = result[0]
     missing_fact_count = result[1]
+
+    record_dq_metric(
+        connection=connection,
+        source_name="openfoodfacts",
+        pipeline_layer="mart",
+        batch_date=batch_date,
+        metric_name="missing_dimension_count",
+        metric_value=missing_dimension_count,
+        passed=(missing_dimension_count == 0),
+        expected_value=0,
+    )
+
+    record_dq_metric(
+        connection=connection,
+        source_name="openfoodfacts",
+        pipeline_layer="mart",
+        batch_date=batch_date,
+        metric_name="missing_fact_count",
+        metric_value=missing_fact_count,
+        passed=(missing_fact_count == 0),
+        expected_value=0,
+    )
 
     if missing_dimension_count > 0:
         raise DataQualityError(
