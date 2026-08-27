@@ -1,9 +1,9 @@
 FROM apache/airflow:3.3.0
 
-
-# ------------------------------------------------------------
-# COPY THE PYTHON PROJECT INTO THE IMAGE
-# ------------------------------------------------------------
+# Airflow's AWS integration, including CloudWatch remote logging.
+RUN pip install --no-cache-dir \
+    "apache-airflow-providers-amazon==9.35.0" \
+    "botocore[crt]"
 
 COPY --chown=airflow:root \
     pyproject.toml \
@@ -12,10 +12,5 @@ COPY --chown=airflow:root \
 COPY --chown=airflow:root \
     src \
     /opt/airflow/project/src
-
-
-# ------------------------------------------------------------
-# INSTALL OUR PIPELINE APPLICATION
-# ------------------------------------------------------------
 
 RUN pip install --no-cache-dir /opt/airflow/project

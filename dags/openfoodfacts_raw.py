@@ -8,6 +8,7 @@ logical commit behavior, and watermark state.
 """
 
 from datetime import timedelta
+import os
 
 from airflow.sdk import (
     dag,
@@ -16,6 +17,9 @@ from airflow.sdk import (
 )
 from pendulum import datetime
 
+from airflow.providers.amazon.aws.notifications.sns import (
+    send_sns_notification,
+)
 from pipeline.jobs.openfoodfacts_raw import (
     run_openfoodfacts_raw,
 )
@@ -24,6 +28,38 @@ from pipeline.jobs.openfoodfacts_mart import (
 )
 from pipeline.jobs.openfoodfacts_staging import (
     run_openfoodfacts_staging,
+)
+
+aws_account_id = os.environ["AWS_ACCOUNT_ID"]
+aws_region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+sns_topic_name = os.getenv(
+    "SNS_ALERT_TOPIC_NAME",
+    "portfolio-data-pipeline-alerts",
+)
+
+sns_topic_arn = (
+    f"arn:aws:sns:{aws_region}:"
+    f"{aws_account_id}:"
+    f"{sns_topic_name}"
+)
+
+
+pipeline_failure_notification = send_sns_notification(
+    aws_conn_id="aws_default",
+    region_name=aws_region,
+    target_arn=sns_topic_arn,
+    subject=(
+        "Airflow failure: "
+        "{{ dag.dag_id }}"
+    ),
+    message=(
+        "Portfolio Data Pipeline failure\n\n"
+        "DAG: {{ dag.dag_id }}\n"
+        "Task: {{ ti.task_id }}\n"
+        "Run ID: {{ run_id }}\n"
+        "Logical date: {{ logical_date }}\n"
+        "Try number: {{ ti.try_number }}\n"
+    ),
 )
 
 
@@ -57,6 +93,10 @@ from pipeline.jobs.openfoodfacts_staging import (
         "portfolio",
         "openfoodfacts",
         "raw",
+    ],
+
+    on_failure_callback=[
+        pipeline_failure_notification,
     ],
 )
 def openfoodfacts_raw():

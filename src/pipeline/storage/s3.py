@@ -24,6 +24,8 @@ class S3StorageConfig:
     bucket: str
     endpoint_url: str | None = None
     region_name: str = "us-east-1"
+    access_key: str | None = None
+    secret_key: str | None = None
 
 
 def create_s3_client(
@@ -35,6 +37,8 @@ def create_s3_client(
         "s3",
         endpoint_url=config.endpoint_url,
         region_name=config.region_name,
+        aws_access_key_id=config.access_key,
+        aws_secret_access_key=config.secret_key,
         config=Config(
             retries={
                 "mode": "standard",

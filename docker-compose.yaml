@@ -97,11 +97,37 @@ x-airflow-common:
     S3_ENDPOINT_URL: http://minio:9000
     PIPELINE_DB_HOST: pipeline-db
     PIPELINE_DB_PORT: "5432"
+    # ----------------------------------------------------------
+    # AIRFLOW REMOTE LOGGING - AWS CLOUDWATCH
+    # ----------------------------------------------------------
+
+    # Send task logs to remote storage in addition to Airflow's
+    # normal task-log handling.
+    AIRFLOW__LOGGING__REMOTE_LOGGING: "true"
+
+    # AWS connection that the CloudWatch task handler will use.
+    AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: aws_default
+
+    # CloudWatch Logs destination.
+    #
+    # Replace [account number] with the actual AWS account number.
+    AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: >-
+      cloudwatch://arn:aws:logs:us-east-1:552655428753:log-group:/portfolio-data-pipeline/airflow
+
+    # Keep local task logs during development even after they have
+    # successfully been uploaded to CloudWatch.
+    AIRFLOW__LOGGING__DELETE_LOCAL_LOGS: "false"
+
+    # Define Airflow's aws_default connection without storing AWS
+    # access keys in the repository.
+    AIRFLOW_CONN_AWS_DEFAULT: >-
+      {"conn_type":"aws","extra":{"region_name":"us-east-1"}}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${HOME}/.aws:/home/airflow/.aws:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -143,14 +169,18 @@ services:
   minio:
     image: quay.io/minio/minio
     command: server /data --console-address ":9001"
+
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+
     ports:
       - "9000:9000"
       - "9001:9001"
+
     volumes:
       - minio-data:/data
+        - minio-data:/data
 
   pipeline-db:
     image: postgres:16
