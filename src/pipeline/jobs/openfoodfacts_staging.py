@@ -1,12 +1,17 @@
+import logging
 import os
 from datetime import date
+from typing import Any
 
 from dotenv import load_dotenv
-import logging
 
 from pipeline.database import (
     connect_pipeline_database,
     load_pipeline_database_config,
+)
+from pipeline.dq.openfoodfacts import (
+    DataQualityError,
+    validate_openfoodfacts_staging_batch,
 )
 from pipeline.load.openfoodfacts_staging import (
     replace_staging_batch,
@@ -15,18 +20,14 @@ from pipeline.state.raw_run import (
     build_success_key,
     create_raw_run_context,
 )
+from pipeline.storage.parquet import (
+    read_parquet_bytes,
+)
 from pipeline.storage.s3 import (
     S3StorageConfig,
     create_s3_client,
     get_json_object,
     get_object_bytes,
-)
-from pipeline.storage.parquet import (
-    read_parquet_bytes,
-)
-from pipeline.dq.openfoodfacts import (
-    DataQualityError,
-    validate_openfoodfacts_staging_batch,
 )
 
 SOURCE_NAME = "openfoodfacts"
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 def get_committed_raw_batch(
     *,
-    s3_client,
+    s3_client: Any,
     s3_config: S3StorageConfig,
     batch_date: date,
 ) -> tuple[list[str], int]:
@@ -149,6 +150,8 @@ def run_openfoodfacts_staging(
             "AWS_DEFAULT_REGION",
             "us-east-1",
         ),
+        access_key=os.getenv("MINIO_ACCESS_KEY"),
+        secret_key=os.getenv("MINIO_SECRET_KEY"),
     )
 
     s3_client = create_s3_client(

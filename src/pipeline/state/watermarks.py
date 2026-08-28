@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import cast
 
 from psycopg import Connection
 
@@ -80,7 +81,7 @@ class WatermarkRepository:
 
             # The SELECT only requested one column, so the timestamp is the
             # first element of the returned tuple.
-            return row[0]
+            return cast(datetime, row[0])
 
     def advance_watermark(
         self,

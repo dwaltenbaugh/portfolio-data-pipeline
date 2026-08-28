@@ -1,4 +1,5 @@
 from datetime import date
+import os
 
 from pipeline.jobs import openfoodfacts_staging
 from pipeline.storage.s3 import S3StorageConfig
@@ -25,6 +26,8 @@ def test_get_committed_raw_object_keys(
     s3_config = S3StorageConfig(
         bucket="portfolio-data-raw",
         endpoint_url="http://localhost:9000",
+        access_key=os.getenv("MINIO_ACCESS_KEY"),
+        secret_key=os.getenv("MINIO_SECRET_KEY"),
     )
 
     batch_date = date(
@@ -149,6 +152,8 @@ def test_get_committed_raw_batch_rejects_row_count_mismatch(
     s3_config = S3StorageConfig(
         bucket="portfolio-data-raw",
         endpoint_url="http://localhost:9000",
+        access_key=os.getenv("MINIO_ACCESS_KEY"),
+        secret_key=os.getenv("MINIO_SECRET_KEY"),
     )
 
     batch_date = date(

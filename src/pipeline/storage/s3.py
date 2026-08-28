@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import boto3
 from botocore.config import Config
@@ -340,7 +340,7 @@ def get_object_bytes(
             Key=object_key,
         )
 
-        return response["Body"].read()
+        return cast(bytes, response["Body"].read())
 
     except (BotoCoreError, ClientError) as exc:
         raise S3UploadError(

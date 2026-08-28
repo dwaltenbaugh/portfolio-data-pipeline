@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+import os
 
 from pipeline.storage.s3 import (
     S3StorageConfig,
@@ -62,7 +63,9 @@ def test_upload_file(
 
     config = S3StorageConfig(
         bucket="portfolio-data-raw",
-        endpoint_url="http://localhost:9000"
+        endpoint_url="http://localhost:9000",
+        access_key=os.getenv("MINIO_ACCESS_KEY"),
+        secret_key=os.getenv("MINIO_SECRET_KEY"),
     )
 
     uri = upload_file(

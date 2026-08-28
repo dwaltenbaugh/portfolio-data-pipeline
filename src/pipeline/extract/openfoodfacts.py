@@ -13,7 +13,6 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -188,10 +187,10 @@ def _check_response(
         504,
     }:
         raise RetryableHTTPError(
-            (
+            
                 "Transient server error: "
                 f"{response.status_code}"
-            )
+            
         )
 
     response.raise_for_status()
@@ -252,9 +251,8 @@ def fetch_page(
     desired extract_start/extract_end semantics directly.
     """
 
-    params = {
+    params: dict[str, str | int] = {
         "categories_tags_en": "Orange Juice",
-
         "fields": (
             "code,"
             "product_name,"
@@ -263,12 +261,7 @@ def fetch_page(
             "categories_tags_en,"
             "last_modified_t"
         ),
-
-        # Incremental extraction is based on modification time,
-        # so ask the API to organize search results around that
-        # same source field.
         "sort_by": "last_modified_t",
-
         "page": page,
         "page_size": page_size,
     }
@@ -327,10 +320,10 @@ def iter_product_pages(
 
     if extract_end <= extract_start:
         raise ValueError(
-            (
+            
                 "extract_end must be later "
                 "than extract_start."
-            )
+            
         )
 
     # If a caller supplies a safety cap, it must allow at least
@@ -389,18 +382,18 @@ def iter_product_pages(
 
             if not isinstance(products, list):
                 raise ValueError(
-                    (
+                    
                         "Expected 'products' "
                         "to contain a list."
-                    )
+                    
                 )
 
             if not products:
                 logger.info(
-                    (
+                    
                         "No products returned. "
                         "Pagination complete."
-                    )
+                    
                 )
                 break
 
@@ -495,10 +488,10 @@ def iter_product_pages(
                 >= total_available
             ):
                 logger.info(
-                    (
+                    
                         "All available products "
                         "retrieved."
-                    )
+                    
                 )
                 break
 

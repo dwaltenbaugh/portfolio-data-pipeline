@@ -3,10 +3,12 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 
 from dotenv import load_dotenv
 
 from pipeline.database import (
+    PipelineDatabaseConfig,
     connect_pipeline_database,
     load_pipeline_database_config,
 )
@@ -52,10 +54,10 @@ logger = logging.getLogger(__name__)
 
 def reconcile_success_marker(
     *,
-    s3_client,
+    s3_client: Any,
     s3_config: S3StorageConfig,
     success_key: str,
-    database_config,
+    database_config: PipelineDatabaseConfig,
 ) -> None:
     """
     Reconcile PostgreSQL with an already-committed raw run.
@@ -130,7 +132,7 @@ def reconcile_success_marker(
 
 def read_current_watermark(
     *,
-    database_config,
+    database_config: PipelineDatabaseConfig,
     source_name: str,
 ) -> datetime | None:
     """
@@ -154,9 +156,10 @@ def read_current_watermark(
 
 def build_source_extraction_window(
     *,
-    database_config,
+    database_config: PipelineDatabaseConfig,
     batch_end: datetime,
-) -> ExtractionWindow:
+    ) -> ExtractionWindow:
+
     """
     Read persistent watermark state and calculate the source window.
 
@@ -219,7 +222,7 @@ def extract_and_land_parts(
     *,
     extractor_config: OpenFoodFactsConfig,
     extraction_window: ExtractionWindow,
-    s3_client,
+    s3_client: Any,
     s3_config: S3StorageConfig,
     run_context: RawRunContext,
 ) -> list[RawObjectRecord]:
@@ -346,7 +349,7 @@ def extract_and_land_parts(
 
 def write_manifest(
     *,
-    s3_client,
+    s3_client: Any,
     s3_config: S3StorageConfig,
     run_context: RawRunContext,
     landed_objects: list[RawObjectRecord],
@@ -392,13 +395,13 @@ def write_manifest(
 
 def commit_raw_run(
     *,
-    s3_client,
+    s3_client: Any,
     s3_config: S3StorageConfig,
     run_context: RawRunContext,
     extraction_window: ExtractionWindow,
     landed_objects: list[RawObjectRecord],
     manifest_key: str,
-    database_config,
+    database_config: PipelineDatabaseConfig,
 ) -> bool:
     """
     Commit the logical raw run by creating _SUCCESS.json.
@@ -477,7 +480,7 @@ def commit_raw_run(
 
 def advance_committed_watermark(
     *,
-    database_config,
+    database_config: PipelineDatabaseConfig,
     extraction_window: ExtractionWindow,
     run_context: RawRunContext,
 ) -> None:
@@ -578,6 +581,8 @@ def run_openfoodfacts_raw(
             "AWS_DEFAULT_REGION",
             "us-east-1",
         ),
+        access_key=os.getenv("MINIO_ACCESS_KEY"),
+        secret_key=os.getenv("MINIO_SECRET_KEY"),
     )
 
     s3_client = create_s3_client(
