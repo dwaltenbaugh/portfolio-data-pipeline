@@ -1,9 +1,10 @@
-from datetime import date
 import os
+from datetime import date
+
+import pytest
 
 from pipeline.jobs import openfoodfacts_staging
 from pipeline.storage.s3 import S3StorageConfig
-import pytest
 
 
 def test_get_committed_raw_object_keys(

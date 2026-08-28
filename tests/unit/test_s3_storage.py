@@ -1,6 +1,6 @@
+import os
 from datetime import date
 from pathlib import Path
-import os
 
 from pipeline.storage.s3 import (
     S3StorageConfig,

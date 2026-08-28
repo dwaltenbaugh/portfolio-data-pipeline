@@ -1,15 +1,10 @@
+from datetime import date
+
 import pyarrow as pa
 import pyarrow.compute as pc
-from datetime import date
 from psycopg import Connection
 
 from pipeline.dq.metrics import record_dq_metric
-from pipeline.storage.s3 import (
-    S3StorageConfig,
-    create_s3_client,
-    get_json_object,
-    get_object_bytes,
-)
 
 
 class DataQualityError(Exception):
