@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+
+        env:
+          POSTGRES_DB: portfolio
+          POSTGRES_USER: portfolio_user
+          POSTGRES_PASSWORD: portfolio_dev_password
+
+        ports:
+          - 5433:5432
+
+        options: >-
+          --health-cmd="pg_isready -U portfolio_user -d portfolio"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      PIPELINE_DB_NAME: portfolio
+      PIPELINE_DB_USER: portfolio_user
+      PIPELINE_DB_PASSWORD: portfolio_dev_password
+      PIPELINE_DB_HOST: localhost
+      PIPELINE_DB_PORT: "5433"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run Ruff
+        run: |
+          ruff check src tests
+
+      - name: Run mypy
+        run: |
+          mypy src
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit
+
+      # Create the database objects required by the integration test.
+      - name: Initialize integration database
+        run: |
+          PGPASSWORD="$PIPELINE_DB_PASSWORD" \
+          psql \
+            -h "$PIPELINE_DB_HOST" \
+            -p "$PIPELINE_DB_PORT" \
+            -U "$PIPELINE_DB_USER" \
+            -d "$PIPELINE_DB_NAME" \
+            -f sql/control/create_source_watermarks.sql
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration
+
+      - name: Build Airflow image
+        run: |
+          docker build \
+            -t portfolio-data-pipeline-airflow:ci \
+            .

@@ -6,11 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "portfolio-data-pipeline"
 version = "0.1.0"
 description = "Portfolio-grade end-to-end data engineering pipeline"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
 
 dependencies = [
     "boto3",
     "httpx",
+    "psycopg[binary]",
     "pyarrow",
     "pydantic",
     "python-dotenv",
@@ -42,3 +43,18 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pyarrow",
+    "pyarrow.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "boto3",
+    "botocore",
+    "botocore.*",
+]
+ignore_missing_imports = true

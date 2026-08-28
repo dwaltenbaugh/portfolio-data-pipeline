@@ -24,3 +24,7 @@ airflow.cfg
 coverage.xml
 .coverage
 htmlcov/
+
+*.egg-info/
+build/
+dist/
