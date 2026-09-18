@@ -10,6 +10,5 @@ from pipeline.jobs.openfoodfacts_raw import (
     run_openfoodfacts_raw,
 )
 
-
 if __name__ == "__main__":
     run_openfoodfacts_raw()
