@@ -154,6 +154,12 @@ services:
 
     restart: always
 
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 
   pipeline-db:
     image: postgres:16
@@ -167,7 +173,15 @@ services:
       - "5433:5432"
 
     volumes:
+      # Named volume holding PostgreSQL's persistent database files.
       - pipeline-db-data:/var/lib/postgresql/data
+
+      # SQL files executed when PostgreSQL initializes a new empty volume.
+      - ./sql/control/create_source_watermarks.sql:/docker-entrypoint-initdb.d/10-source-watermarks.sql:ro
+      - ./sql/control/create_dq_metrics.sql:/docker-entrypoint-initdb.d/20-dq-metrics.sql:ro
+      - ./sql/staging/create_openfoodfacts_products.sql:/docker-entrypoint-initdb.d/30-staging-products.sql:ro
+      - ./sql/mart/create_dim_product.sql:/docker-entrypoint-initdb.d/40-dim-product.sql:ro
+      - ./sql/mart/create_fact_product_update.sql:/docker-entrypoint-initdb.d/50-fact-product-update.sql:ro
 
     healthcheck:
       test:
@@ -180,6 +194,23 @@ services:
       retries: 5
 
     restart: always
+
+  minio-create-bucket:
+    image: quay.io/minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set}
+      RAW_BUCKET: ${RAW_BUCKET:?RAW_BUCKET must be set}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000
+        "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}" &&
+        mc mb --ignore-existing "local/$${RAW_BUCKET}"
+    restart: "no"
 
 
 volumes:

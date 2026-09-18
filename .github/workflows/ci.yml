@@ -66,6 +66,26 @@ jobs:
         run: |
           pytest tests/unit
 
+      - name: Validate development Compose configuration
+        env:
+          ENV_FILE_PATH: .env.dev.example
+        run: |
+          docker compose \
+            --env-file .env.dev.example \
+            -f docker-compose.yaml \
+            -f docker-compose.dev.yaml \
+            config --quiet
+
+      - name: Validate production Compose configuration
+        env:
+          ENV_FILE_PATH: .env.prod.example
+        run: |
+          docker compose \
+            --env-file .env.prod.example \
+            -f docker-compose.yaml \
+            -f docker-compose.prod.yaml \
+            config --quiet
+
       # Create the database objects required by the integration test.
       - name: Initialize integration database
         run: |
