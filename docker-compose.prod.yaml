@@ -1,0 +1,71 @@
+---
+# Production-only Airflow configuration.
+#
+# PostgreSQL, Redis, S3, CloudWatch, and SNS are externally managed.
+# This file intentionally contains no build instructions, bind mounts,
+# local infrastructure services, or host-published ports.
+
+x-prod-airflow:
+  &prod-airflow
+
+  environment:
+    PIPELINE_ENV: prod
+
+    # Production task logs are written to CloudWatch.
+    AIRFLOW__LOGGING__REMOTE_LOGGING: "true"
+    AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: aws_default
+    AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: >-
+      ${AIRFLOW_REMOTE_BASE_LOG_FOLDER:?Set AIRFLOW_REMOTE_BASE_LOG_FOLDER}
+    AIRFLOW__LOGGING__DELETE_LOCAL_LOGS: "true"
+
+    # No static AWS access keys are included. Boto3/Airflow will use
+    # the IAM role supplied by the production runtime.
+    AIRFLOW_CONN_AWS_DEFAULT: >-
+      {"conn_type":"aws","extra":{"region_name":"${AWS_DEFAULT_REGION:?Set AWS_DEFAULT_REGION}"}}
+
+    ENABLE_FAILURE_NOTIFICATIONS: "true"
+
+  restart: always
+
+  # Prevent unbounded local Docker JSON logs. Airflow task logs are
+  # separately sent to CloudWatch.
+  logging:
+    driver: json-file
+
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+
+services:
+  airflow-init:
+    <<: *prod-airflow
+    restart: "no"
+
+
+  airflow-apiserver:
+    <<: *prod-airflow
+
+
+  airflow-scheduler:
+    <<: *prod-airflow
+
+
+  airflow-dag-processor:
+    <<: *prod-airflow
+
+
+  airflow-worker:
+    <<: *prod-airflow
+
+
+  airflow-triggerer:
+    <<: *prod-airflow
+
+
+  airflow-cli:
+    <<: *prod-airflow
+
+
+  flower:
+    <<: *prod-airflow
