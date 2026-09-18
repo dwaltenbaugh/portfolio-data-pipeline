@@ -1,7 +1,6 @@
 from datetime import date
 
-from dotenv import load_dotenv
-
+from pipeline.config import load_runtime_environment
 from pipeline.database import (
     connect_pipeline_database,
     load_pipeline_database_config,
@@ -38,7 +37,7 @@ def run_openfoodfacts_mart(
         )
     """
 
-    load_dotenv()
+    load_runtime_environment()
 
     database_config = (
         load_pipeline_database_config()

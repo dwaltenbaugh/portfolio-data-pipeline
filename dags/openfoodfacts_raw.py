@@ -7,9 +7,12 @@ The pipeline package owns extraction, validation, raw landing,
 logical commit behavior, and watermark state.
 """
 
-from datetime import timedelta
 import os
+from datetime import timedelta
 
+from airflow.providers.amazon.aws.notifications.sns import (
+    send_sns_notification,
+)
 from airflow.sdk import (
     dag,
     get_current_context,
@@ -17,49 +20,76 @@ from airflow.sdk import (
 )
 from pendulum import datetime
 
-from airflow.providers.amazon.aws.notifications.sns import (
-    send_sns_notification,
+from pipeline.jobs.openfoodfacts_mart import (
+    run_openfoodfacts_mart,
 )
 from pipeline.jobs.openfoodfacts_raw import (
     run_openfoodfacts_raw,
-)
-from pipeline.jobs.openfoodfacts_mart import (
-    run_openfoodfacts_mart,
 )
 from pipeline.jobs.openfoodfacts_staging import (
     run_openfoodfacts_staging,
 )
 
-aws_account_id = os.environ["AWS_ACCOUNT_ID"]
-aws_region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-sns_topic_name = os.getenv(
-    "SNS_ALERT_TOPIC_NAME",
-    "portfolio-data-pipeline-alerts",
-)
-
-sns_topic_arn = (
-    f"arn:aws:sns:{aws_region}:"
-    f"{aws_account_id}:"
-    f"{sns_topic_name}"
+aws_region = os.getenv(
+    "AWS_DEFAULT_REGION",
+    "us-east-1",
 )
 
 
-pipeline_failure_notification = send_sns_notification(
-    aws_conn_id="aws_default",
-    region_name=aws_region,
-    target_arn=sns_topic_arn,
-    subject=(
-        "Airflow failure: "
-        "{{ dag.dag_id }}"
-    ),
-    message=(
-        "Portfolio Data Pipeline failure\n\n"
-        "DAG: {{ dag.dag_id }}\n"
-        "Task: {{ ti.task_id }}\n"
-        "Run ID: {{ run_id }}\n"
-        "Logical date: {{ logical_date }}\n"
-        "Try number: {{ ti.try_number }}\n"
-    ),
+def build_failure_notification():
+    """
+    Build the SNS callback only when the selected environment enables it.
+
+    Development returns None and requires no AWS account or SNS topic.
+    Production creates the real Airflow notification callback.
+    """
+
+    enabled = (
+        os.getenv(
+            "ENABLE_FAILURE_NOTIFICATIONS",
+            "false",
+        ).lower()
+        == "true"
+    )
+
+    if not enabled:
+        return None
+
+    aws_account_id = os.environ[
+        "AWS_ACCOUNT_ID"
+    ]
+
+    sns_topic_name = os.environ[
+        "SNS_ALERT_TOPIC_NAME"
+    ]
+
+    sns_topic_arn = (
+        f"arn:aws:sns:{aws_region}:"
+        f"{aws_account_id}:"
+        f"{sns_topic_name}"
+    )
+
+    return send_sns_notification(
+        aws_conn_id="aws_default",
+        region_name=aws_region,
+        target_arn=sns_topic_arn,
+        subject=(
+            "Airflow failure: "
+            "{{ dag.dag_id }}"
+        ),
+        message=(
+            "Portfolio Data Pipeline failure\n\n"
+            "DAG: {{ dag.dag_id }}\n"
+            "Task: {{ ti.task_id }}\n"
+            "Run ID: {{ run_id }}\n"
+            "Logical date: {{ logical_date }}\n"
+            "Try number: {{ ti.try_number }}\n"
+        ),
+    )
+
+
+pipeline_failure_notification = (
+    build_failure_notification()
 )
 
 
@@ -95,9 +125,9 @@ pipeline_failure_notification = send_sns_notification(
         "raw",
     ],
 
-    on_failure_callback=[
-        pipeline_failure_notification,
-    ],
+    on_failure_callback=(
+        pipeline_failure_notification
+    ),
 )
 def openfoodfacts_raw():
     """

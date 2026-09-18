@@ -3,8 +3,7 @@ import os
 from datetime import date
 from typing import Any
 
-from dotenv import load_dotenv
-
+from pipeline.config import load_runtime_environment
 from pipeline.database import (
     connect_pipeline_database,
     load_pipeline_database_config,
@@ -135,7 +134,7 @@ def run_openfoodfacts_staging(
     Returns the total number of staging rows inserted.
     """
 
-    load_dotenv()
+    load_runtime_environment()
 
     # Load PostgreSQL configuration using the same shared helper
     # used by the raw extraction job.

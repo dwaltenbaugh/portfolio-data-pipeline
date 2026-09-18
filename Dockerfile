@@ -14,3 +14,9 @@ COPY --chown=airflow:root \
     /opt/airflow/project/src
 
 RUN pip install --no-cache-dir /opt/airflow/project
+
+# Production runs an immutable image without a source-code bind mount.
+# Package the DAG definitions with the same version of the application code.
+COPY --chown=airflow:root \
+    dags \
+    /opt/airflow/dags

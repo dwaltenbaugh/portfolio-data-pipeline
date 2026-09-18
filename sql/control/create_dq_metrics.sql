@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS control.dq_metrics (
 
     -- When the metric was recorded.
     recorded_at TIMESTAMPTZ NOT NULL
-        DEFAULT CURRENT_TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE (
         source_name,
