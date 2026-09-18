@@ -5,8 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from dotenv import load_dotenv
-
+from pipeline.config import load_runtime_environment
 from pipeline.database import (
     PipelineDatabaseConfig,
     connect_pipeline_database,
@@ -554,7 +553,7 @@ def run_openfoodfacts_raw(
         watermark advancement
     """
 
-    load_dotenv()
+    load_runtime_environment()
 
     logging.basicConfig(
         level=logging.INFO,
