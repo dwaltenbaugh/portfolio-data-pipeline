@@ -90,6 +90,16 @@ cp .env.prod.example .env.prod
 Rendering the configuration does not deploy production. A real deployment also
 requires external infrastructure, valid secrets, and a published Airflow image.
 
+### Production image publishing
+
+After CI succeeds for a push to `main`, GitHub Actions publishes the Airflow
+image to GitHub Container Registry using the full commit SHA. The resulting
+image name follows the format
+`ghcr.io/dwaltenbaugh/portfolio-data-pipeline:<commit-sha>`.
+
+The workflow does not publish a mutable `latest` tag. Production configuration
+must reference the exact image revision being deployed.
+
 ## Configuration behavior
 
 `PIPELINE_ENV` controls runtime configuration:
